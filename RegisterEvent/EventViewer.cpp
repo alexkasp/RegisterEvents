@@ -1,5 +1,12 @@
-#include "EventViewer.h"
+#ifndef __linux__
 #include <boost\thread.hpp>
+#else
+
+#include <boost/thread.hpp>
+#endif
+
+#include "EventViewer.h"
+
 
 EventViewer::EventViewer()
 {
@@ -33,16 +40,18 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 {
 	boost::asio::streambuf buf;
 	boost::system::error_code ec;
-	while (1)
-	{
-		boost::asio::read_until(*socket, buf, "\n", ec);
-		if (ec)
-		{	
-			cout << "release socket" << endl;
-			return 0;
-		}
-
+	boost::asio::read_until(*socket, buf, "\n", ec);
+	
+	if (!ec)
+	{	
 		string str(boost::asio::buffers_begin(buf.data()), boost::asio::buffers_begin(buf.data()) + buf.size());
 		std::cout << "Receive Event" << str;
 	}
+	
+	cout << "release socket" << endl;
+	socket->close();
+	
+	return 0;
+		
+	
 }

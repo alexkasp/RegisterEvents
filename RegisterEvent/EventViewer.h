@@ -1,7 +1,10 @@
 #pragma once
 
+#ifndef __linux__
 #include <boost\asio.hpp>
-
+#else
+#include <boost/asio.hpp>
+#endif
 using namespace std;
 
 class EventViewer
