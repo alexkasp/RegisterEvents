@@ -74,7 +74,9 @@ string EventViewer::parseEventData(string eventData)
 	//boost::regex xRegExpr("Auth error for (.*)@(.*) from .*");
 	boost::smatch xResults;
 
-	boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
+	bool parsed = boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
+	
+	cout << "receive:\n" << eventData << "\n parsestatus=" << parsed << endl;
 
 	string host = xResults[4];
 	string sipnum = xResults[2];
@@ -92,7 +94,7 @@ string EventViewer::parseEventData(string eventData)
 int EventViewer::sendEvent(string data)
 {
 	try{
-
+		cout << "try send:\n" << data << endl;
 		boost::asio::streambuf request;
 
 		std::ostream request_stream(&request);
