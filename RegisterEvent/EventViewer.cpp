@@ -1,7 +1,8 @@
 #ifndef __linux__
 #include <boost\thread.hpp>
+#include <boost\regex.hpp>
 #else
-
+#include <boost/regex.hpp>
 #include <boost/thread.hpp>
 #endif
 
@@ -10,7 +11,12 @@
 
 EventViewer::EventViewer()
 {
-	
+	boost::asio::ip::tcp::resolver resolver(io_service);
+	boost::asio::ip::tcp::resolver::query query(server, "80");
+
+	boost::asio::ip::tcp::resolver::iterator iter = resolver.resolve(query);
+	ep = *iter;
+
 }
 
 
@@ -54,4 +60,54 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 	return 0;
 		
 	
+}
+
+
+// this function parse data and get sip login and ip addr
+string EventViewer::parseEventData(string eventData)
+{
+	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
+	
+	boost::regex xRegExpr("Auth error for (.*)@(.*) from (.*) cause .*");
+	//boost::regex xRegExpr("Auth error for (.*)@(.*) from .*");
+	boost::smatch xResults;
+
+	boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
+
+	string host = xResults[3];
+	string sipnum = xResults[1];
+	string domain = xResults[2];
+
+	sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain);
+	//string result = xResults[1];
+	return xResults[2];
+}
+
+
+// this function send prepared data to registration host
+int EventViewer::sendEvent(string data)
+{
+	try{
+
+		boost::asio::streambuf request;
+
+		std::ostream request_stream(&request);
+
+		request_stream << "GET " << data << " HTTP/1.0\r\n";
+		request_stream << "Host: " << server << "\r\n";
+		request_stream << "Accept: */*\r\n";
+		request_stream << "Connection: close\r\n\r\n";
+
+		boost::asio::ip::tcp::socket sock(io_service);
+		sock.connect(ep);
+		boost::system::error_code ec;
+		boost::asio::write(sock, request);
+		sock.close();
+
+	}
+	catch (exception& e)
+	{
+		cout << "CATCH EXCEPTION!!!" << e.what() << '\n';
+	}
+	return 0;
 }
