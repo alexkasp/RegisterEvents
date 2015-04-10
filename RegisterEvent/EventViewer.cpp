@@ -68,18 +68,19 @@ string EventViewer::parseEventData(string eventData)
 {
 	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
 	
-	boost::regex xRegExpr("Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+)");
+	boost::regex xRegExpr("(\\w+) Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+)");
 	//boost::regex xRegExpr("Auth error for (.*)@(.*) from .*");
 	boost::smatch xResults;
 
 	boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
 
-	string host = xResults[3];
-	string sipnum = xResults[1];
-	string domain = xResults[2];
-	string retry = xResults[4];
+	string host = xResults[4];
+	string sipnum = xResults[2];
+	string domain = xResults[3];
+	string retry = xResults[5];
+	string action = xResults[1];
 
-	sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry);
+	sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry+"&action="+action);
 	//string result = xResults[1];
 	return xResults[2];
 }
