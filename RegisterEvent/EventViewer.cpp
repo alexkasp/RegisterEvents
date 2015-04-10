@@ -1,9 +1,11 @@
 #ifndef __linux__
 #include <boost\thread.hpp>
 #include <boost\regex.hpp>
+#include <boost\date_time\gregorian\gregorian.hpp>
 #else
 #include <boost/regex.hpp>
 #include <boost/thread.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
 #endif
 
 #include "EventViewer.h"
@@ -68,7 +70,7 @@ string EventViewer::parseEventData(string eventData)
 {
 	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
 	
-	boost::regex xRegExpr("(\\w+) Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+)");
+	boost::regex xRegExpr("(\\w+) .*: Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+)");
 	//boost::regex xRegExpr("Auth error for (.*)@(.*) from .*");
 	boost::smatch xResults;
 
