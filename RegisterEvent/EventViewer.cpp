@@ -54,6 +54,7 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 	{	
 		string str(boost::asio::buffers_begin(buf.data()), boost::asio::buffers_begin(buf.data()) + buf.size());
 		std::cout << "Receive Event" << str;
+		parseEventData(str);
 	}
 	
 	cout << "release socket" << endl;
@@ -68,10 +69,12 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 // this function parse data and get sip login and ip addr
 string EventViewer::parseEventData(string eventData)
 {
+	cout<<"Start string:"<<"\n"<<eventData<<endl;
 	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
 	
-	boost::regex xRegExpr("(\\w+) .*: Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+)");
-	//boost::regex xRegExpr("Auth error for (.*)@(.*) from .*");
+	//boost::regex xRegExpr(".*ban .* Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+) .*");
+	boost::regex xRegExpr("(\\w+) .* Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+).*");
+	//boost::regex xRegExpr(".* Auth error for (.*)@(.*) from .*");
 	boost::smatch xResults;
 
 	bool parsed = boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
@@ -83,6 +86,8 @@ string EventViewer::parseEventData(string eventData)
 	string domain = xResults[3];
 	string retry = xResults[5];
 	string action = xResults[1];
+	
+	cout<<"host="<<host<<"\n"<<"sipnum="<<sipnum<<"\n"<<"domain="<<domain<<"\n"<<"retry="<<retry<<"\n"<<"action="<<action<<endl;
 
 	sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry+"&action="+action);
 	//string result = xResults[1];
