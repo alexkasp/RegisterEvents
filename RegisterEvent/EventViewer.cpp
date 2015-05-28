@@ -8,6 +8,7 @@
 #include <boost/date_time/gregorian/gregorian.hpp>
 #endif
 
+#include <stdlib.h>
 #include "EventViewer.h"
 
 
@@ -26,9 +27,28 @@ EventViewer::~EventViewer()
 {
 }
 
+int EventViewer::processOpensipsEvents()
+{
+    while(1)
+    {
+	char buff[1024];
+	boost::asio::ip::udp::socket socket(io_service,boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 8080));
+	boost::asio::streambuf buf;
+	boost::system::error_code ec;
+	boost::asio::ip::udp::endpoint sender_endpoint;
+	int bytes = socket.receive_from(boost::asio::buffer(buff),sender_endpoint);
+	if(bytes>0)
+	
+	{
+	    std::string msg(buff, bytes);
+	    cout<<msg<<endl;
+	}
+    }
+}
 
 int EventViewer::start()
 {
+	boost::thread(boost::bind(&EventViewer::processOpensipsEvents,this));
 	boost::asio::ip::tcp::acceptor a(io_service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 8080));
 	while (1)
 	{
@@ -65,6 +85,17 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 	
 }
 
+void EventViewer::blockip(string host)
+{
+    string arg = "iptables -I fail2ban-opensips 1 -s "+host+" -j DROP";
+    system(arg.c_str());
+}
+
+void EventViewer::unblockip(string host)
+{
+    string arg="iptables -D fail2ban-opensips -s "+host+" -j DROP";
+    system(arg.c_str());
+}
 
 // this function parse data and get sip login and ip addr
 string EventViewer::parseEventData(string eventData)
@@ -72,9 +103,7 @@ string EventViewer::parseEventData(string eventData)
 	cout<<"Start string:"<<"\n"<<eventData<<endl;
 	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
 	
-	//boost::regex xRegExpr(".*ban .* Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+) .*");
-	boost::regex xRegExpr("(\\w+) .* Auth error for (.*)@(.*) from (.*) cause .* retry (\\d+).*");
-	//boost::regex xRegExpr(".* Auth error for (.*)@(.*) from .*");
+	boost::regex xRegExpr("(\\w+) .* Auth for (.*)@(.*) from (.*) cause (.*) retry (\\d+).*");
 	boost::smatch xResults;
 
 	bool parsed = boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
@@ -84,13 +113,46 @@ string EventViewer::parseEventData(string eventData)
 	string host = xResults[4];
 	string sipnum = xResults[2];
 	string domain = xResults[3];
-	string retry = xResults[5];
+	string retry = xResults[6];
+	string cause = xResults[5];
 	string action = xResults[1];
 	
 	cout<<"host="<<host<<"\n"<<"sipnum="<<sipnum<<"\n"<<"domain="<<domain<<"\n"<<"retry="<<retry<<"\n"<<"action="<<action<<endl;
-
-	sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry+"&action="+action);
-	//string result = xResults[1];
+	
+	if(cause!="1")
+	{
+	    auto t = proved_ip.find(host);
+	    
+	    if(t!=proved_ip.end())
+	    {
+		//this ip proved we do nothing
+	    }	
+	    else
+	    {
+		if(action=="ban")
+		{
+		    cout<<"trying to ban"<<endl;
+		    blockip(host);
+		}
+		else
+		{
+		    cout<<"try to unban"<<endl;
+		    unblockip(host);
+		}    
+		sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry+"&action="+action);
+	    }
+	    
+	
+	}
+	else
+	{
+	    struct timeval now;
+	    gettimeofday(&now,NULL);
+	    
+	    
+	    proved_ip[host] = now.tv_sec;
+	}
+	    
 	return xResults[2];
 }
 
