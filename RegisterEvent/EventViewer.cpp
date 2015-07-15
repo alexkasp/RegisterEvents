@@ -27,6 +27,141 @@ EventViewer::~EventViewer()
 {
 }
 
+int EventViewer::parse(std::stringstream& ss,string& param,string& value)
+{
+    string msg;
+    if(std::getline(ss,msg,'\n'))
+    {
+	size_t pos = 0;
+	if((pos = msg.find(delimiter))!= std::string::npos)
+	{
+	    param = msg.substr(0, pos);
+	    msg.erase(0, pos + delimiter.length());
+	    value=msg;
+	}
+	else
+	    return -1;
+
+    }
+
+}
+
+int EventViewer::parseTryingRegister(std::stringstream& ss)
+{
+
+     struct timeval now;
+     gettimeofday(&now,NULL);
+     
+     string param;
+     string callid;
+     string sourceIP;
+     string uid;
+     
+     parse(ss,param,uid);
+     parse(ss,param,sourceIP);
+     parse(ss,param,callid);
+     
+     registerdata rd;
+     
+     rd.sourceIP=sourceIP;
+     rd.regTime=now.tv_sec;
+     rd.uid = uid.substr(0,UID_LENGTH);
+     
+     callidtoip[callid] = rd;
+     
+	 
+    return 1;
+}
+
+int EventViewer::parseWrongRegister(std::stringstream& ss)
+{
+    struct timeval now;
+    gettimeofday(&now,NULL);
+    
+    string param;
+    string host;
+    string callid;
+    string uid;
+    
+    parse(ss,param,uid);
+    parse(ss,param,host);
+    parse(ss,param,callid);
+    
+    auto regs = callidtoip.find(callid);
+    
+    
+    if(regs!=callidtoip.end())
+    {
+    
+	auto t = proved_ip.find(host);
+	
+	if(t!=proved_ip.end())
+	{
+	}
+	    
+	if((t!=proved_ip.end())&&((t->second).uid==uid.substr(0,UID_LENGTH)))
+	{
+		//this ip proved we do nothing
+	}	
+	else
+	{
+	    registerdata rd;
+	    rd.sourceIP=host;
+	    rd.regTime = now.tv_sec;
+	    rd.uid = uid.substr(0,UID_LENGTH);
+	
+	    auto addres = blockedip.find(host);
+	    if(addres!=blockedip.end())
+	    {
+		if(((addres->second).trycount++)>MAX_TRYCOUNT)
+		{
+		    callidtoip.erase(regs);
+		    sendEvent("/api/ats/block?host="+host+"&sipnum="+uid+"&action=ban");
+		    blockip(host);
+		}
+	    }
+	    else
+	    {
+		rd.trycount=1;
+		blockedip[host]=rd;
+		callidtoip.erase(regs);
+		
+	    }
+	    
+	}
+	
+    }
+    else
+    {
+    
+    }
+}
+
+int EventViewer::parseRegistered(std::stringstream& ss)
+{
+    struct timeval now;
+    gettimeofday(&now,NULL);
+    
+    string param;
+    string callid;
+    string uid;
+
+    parse(ss,param,uid);
+    parse(ss,param,callid);
+    
+    
+    auto regs = callidtoip.find(callid);
+    
+    if(regs!=callidtoip.end())
+    {
+	
+	proved_ip[(regs->second).sourceIP] = regs->second;
+	callidtoip.erase(regs);
+    }
+        
+    return 1;
+}
+
 int EventViewer::processOpensipsEvents()
 {
     while(1)
@@ -38,27 +173,62 @@ int EventViewer::processOpensipsEvents()
 	boost::asio::ip::udp::endpoint sender_endpoint;
 	int bytes = socket.receive_from(boost::asio::buffer(buff),sender_endpoint);
 	if(bytes>0)
-	
 	{
-	    std::string msg(buff, bytes);
-	    cout<<msg<<endl;
+	    buff[bytes]=0;
+	    std::stringstream ss(buff);
+	    std::string msg;
+	    std::getline(ss,msg,'\n');
+	    
+	    if(msg=="E_PEER_TRYING_REGISTER")
+	    {
+		parseTryingRegister(ss);
+	    }
+	    else if(msg=="E_PEER_REGISTERED")
+	    {
+		parseRegistered(ss);
+	    }
+	    else if(msg=="E_PEER_WRONG_REGISTER")
+	    {
+		parseWrongRegister(ss);
+	    }
+	    
+	}
+    }
+}
+
+int EventViewer::processUnBlock()
+{
+    while(1)
+    {
+	
+	boost::this_thread::sleep( boost::posix_time::milliseconds(10000));
+	struct timeval now;
+	gettimeofday(&now,NULL);
+    
+	for(auto h=blockedip.begin();h!=blockedip.end();)
+	{
+	    if((now.tv_sec-(h->second).regTime) > BLOCK_TIMEOUT_SECONDS)
+	    {
+		unblockip(h->first);
+		sendEvent("/api/ats/block?host="+(h->first)+"&sipnum="+(h->second).uid+"&action=unban");
+		blockedip.erase(h++);
+	    
+	    }
+	else
+	    ++h;
+	
 	}
     }
 }
 
 int EventViewer::start()
 {
-	boost::thread(boost::bind(&EventViewer::processOpensipsEvents,this));
-	boost::asio::ip::tcp::acceptor a(io_service, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), 8080));
-	while (1)
+	boost::thread(boost::bind(&EventViewer::processUnBlock,this));
+	
+	while(1)
 	{
-		shared_ptr<boost::asio::ip::tcp::socket> socket(new boost::asio::ip::tcp::socket(io_service));
-		a.accept(*socket);
-
-		boost::thread(boost::bind(&EventViewer::processEvents,this,socket));
+	    processOpensipsEvents();
 	}
-	
-	
 
 	return 0;
 }
@@ -73,11 +243,9 @@ int EventViewer::processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket)
 	if (!ec)
 	{	
 		string str(boost::asio::buffers_begin(buf.data()), boost::asio::buffers_begin(buf.data()) + buf.size());
-		std::cout << "Receive Event" << str;
 		parseEventData(str);
 	}
 	
-	cout << "release socket" << endl;
 	socket->close();
 	
 	return 0;
@@ -100,7 +268,6 @@ void EventViewer::unblockip(string host)
 // this function parse data and get sip login and ip addr
 string EventViewer::parseEventData(string eventData)
 {
-	cout<<"Start string:"<<"\n"<<eventData<<endl;
 	eventData.erase(std::remove(eventData.begin(), eventData.end(), '\\'), eventData.end());
 	
 	boost::regex xRegExpr("(\\w+) .* Auth for (.*)@(.*) from (.*) cause (.*) retry (\\d+).*");
@@ -108,7 +275,6 @@ string EventViewer::parseEventData(string eventData)
 
 	bool parsed = boost::regex_match(eventData, xResults, xRegExpr , boost::match_default | boost::match_partial);
 	
-	cout << "receive:\n" << eventData << "\n parsestatus=" << parsed << endl;
 
 	string host = xResults[4];
 	string sipnum = xResults[2];
@@ -117,13 +283,12 @@ string EventViewer::parseEventData(string eventData)
 	string cause = xResults[5];
 	string action = xResults[1];
 	
-	cout<<"host="<<host<<"\n"<<"sipnum="<<sipnum<<"\n"<<"domain="<<domain<<"\n"<<"retry="<<retry<<"\n"<<"action="<<action<<endl;
 	
 	if(cause!="1")
 	{
 	    auto t = proved_ip.find(host);
 	    
-	    if(t!=proved_ip.end())
+	    if((t!=proved_ip.end())&&((t->second).uid==sipnum.substr(0,UID_LENGTH)))
 	    {
 		//this ip proved we do nothing
 	    }	
@@ -131,26 +296,16 @@ string EventViewer::parseEventData(string eventData)
 	    {
 		if(action=="ban")
 		{
-		    cout<<"trying to ban"<<endl;
-		    blockip(host);
+		    //blockip(host);
 		}
 		else
 		{
-		    cout<<"try to unban"<<endl;
-		    unblockip(host);
+		    //unblockip(host);
 		}    
 		sendEvent("/api/ats/block?host="+host+"&sipnum="+sipnum+"&domain="+domain+"&retry="+retry+"&action="+action);
 	    }
 	    
 	
-	}
-	else
-	{
-	    struct timeval now;
-	    gettimeofday(&now,NULL);
-	    
-	    
-	    proved_ip[host] = now.tv_sec;
 	}
 	    
 	return xResults[2];
@@ -161,7 +316,6 @@ string EventViewer::parseEventData(string eventData)
 int EventViewer::sendEvent(string data)
 {
 	try{
-		cout << "try send:\n" << data << endl;
 		boost::asio::streambuf request;
 
 		std::ostream request_stream(&request);
