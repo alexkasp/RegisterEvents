@@ -18,7 +18,20 @@ struct registerdata
     time_t regTime;
     string uid;
     int trycount = 0;
+    int blocked = 0;
+    
+    registerdata(string _uid)
+    {
+	uid = _uid;
+    }
+    
+    registerdata()
+    {
+	uid="";
+    }
 };
+
+typedef map<string,registerdata> HOSTPARAMS;
 
 class EventViewer
 {
@@ -41,16 +54,18 @@ public:
 	int start();
 protected:
 	
-	map<string,registerdata> proved_ip;
-	map<string,registerdata> callidtoip;
-	map<string,registerdata> blockedip;
+	HOSTPARAMS proved_ip;
+	HOSTPARAMS callidtoip;
+	HOSTPARAMS blockedip;
 	
+	int loadProvedIP(HOSTPARAMS& list);
+	int saveProvedIP(std::string host,std::string uid);
 	const string delimiter = "::";
 	const int UID_LENGTH = 6;
 	const int BLOCK_TIMEOUT_SECONDS=30;
 	const int MAX_TRYCOUNT = 3;
 	
-	int parse(std::stringstream&, std::string&, std::string&);
+	int parse(std::istream&, std::string&, std::string&);
 	int processOpensipsEvents();
 	int processEvents(shared_ptr<boost::asio::ip::tcp::socket> socket);
 	int processUnBlock();
